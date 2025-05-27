@@ -44,6 +44,126 @@ var LAYOUT_CONFIG = {
     ALLOWED_IMAGE_EXTENSIONS: ["jpg", "jpeg", "png", "tif", "tiff", "psd"],
     MAX_PATH_LENGTH: 255,
   },
+  DEBUG: {
+    ENABLED: false, // Can be toggled via dialog
+    LOG_FILE: "photoshop_importer_log.txt",
+    LOG_LEVELS: {
+      INFO: "INFO",
+      WARNING: "WARNING",
+      ERROR: "ERROR",
+      DEBUG: "DEBUG",
+    },
+  },
+};
+
+/**
+ * Error handling and logging utilities
+ */
+var ErrorUtils = {
+  logFile: null,
+  debugMode: false,
+
+  /**
+   * Initializes error handling and logging
+   */
+  init: function () {
+    // Ask user if they want debug mode
+    this.debugMode = confirm(
+      "Enable debug mode?\nThis will create a detailed log file in your documents folder."
+    );
+    LAYOUT_CONFIG.DEBUG.ENABLED = this.debugMode;
+
+    if (this.debugMode) {
+      try {
+        // Create log file in user's documents folder
+        var logPath = Folder.myDocuments + "/" + LAYOUT_CONFIG.DEBUG.LOG_FILE;
+        this.logFile = new File(logPath);
+
+        // Append to existing log or create new
+        this.logFile.open("a");
+        this.log(
+          LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+          "=== New Session Started ==="
+        );
+        this.log(
+          LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+          "Photoshop Version: " + app.version
+        );
+        this.log(LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO, "OS: " + $.os);
+        this.log(LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO, "Script Version: 1.0.0");
+      } catch (e) {
+        alert("Failed to initialize logging: " + e);
+      }
+    }
+  },
+
+  /**
+   * Logs a message with timestamp and level
+   * @param {string} level - Log level
+   * @param {string} message - Message to log
+   * @param {Error} [error] - Optional error object
+   */
+  log: function (level, message, error) {
+    if (!this.debugMode) return;
+
+    try {
+      var timestamp = new Date().toISOString();
+      var logMessage = timestamp + " [" + level + "] " + message;
+
+      if (error) {
+        logMessage += "\nError: " + error.message;
+        if (error.stack) {
+          logMessage += "\nStack: " + error.stack;
+        }
+      }
+
+      logMessage += "\n";
+      this.logFile.write(logMessage);
+      this.logFile.flush(); // Ensure message is written immediately
+    } catch (e) {
+      alert("Logging failed: " + e);
+    }
+  },
+
+  /**
+   * Handles an error with optional logging
+   * @param {string} context - Where the error occurred
+   * @param {Error|string} error - Error object or message
+   * @param {boolean} [showAlert=true] - Whether to show alert to user
+   */
+  handleError: function (context, error, showAlert) {
+    var errorMsg = error.message || error;
+    var fullMessage = context + ": " + errorMsg;
+
+    // Log error
+    if (this.debugMode) {
+      this.log(LAYOUT_CONFIG.DEBUG.LOG_LEVELS.ERROR, context, error);
+    }
+
+    // Show alert if needed
+    if (showAlert !== false) {
+      alert(fullMessage);
+    }
+
+    return false; // For error handling chains
+  },
+
+  /**
+   * Closes log file and performs cleanup
+   */
+  cleanup: function () {
+    if (this.debugMode && this.logFile) {
+      try {
+        this.log(
+          LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+          "=== Session Ended ===\n"
+        );
+        this.logFile.close();
+      } catch (e) {
+        alert("Failed to close log file: " + e);
+      }
+    }
+  },
 };
 
 /**
@@ -281,17 +401,35 @@ function validateCSVData(csvData) {
  * @returns {File} Selected CSV file or null if cancelled
  */
 function selectCSVFile() {
-  var csvFile = File.openDialog("Select a CSV file", "*.csv");
-  if (csvFile === null) return null;
+  try {
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "Opening CSV file dialog"
+    );
 
-  // Validate path
-  var validation = PathUtils.validatePath(csvFile.fsName, ["csv"]);
-  if (!validation.isValid) {
-    alert("Invalid CSV file path: " + validation.error);
-    return null;
+    var csvFile = File.openDialog("Select a CSV file", "*.csv");
+    if (csvFile === null) {
+      ErrorUtils.log(
+        LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+        "CSV file selection cancelled by user"
+      );
+      return null;
+    }
+
+    // Validate path
+    var validation = PathUtils.validatePath(csvFile.fsName, ["csv"]);
+    if (!validation.isValid) {
+      return ErrorUtils.handleError("CSV File Selection", validation.error);
+    }
+
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "Selected CSV file: " + csvFile.fsName
+    );
+    return csvFile;
+  } catch (error) {
+    return ErrorUtils.handleError("CSV File Selection", error);
   }
-
-  return csvFile;
 }
 
 /**
@@ -300,13 +438,23 @@ function selectCSVFile() {
  * @returns {Array<Array<string>>} Parsed CSV data as 2D array
  */
 function readCSV(file) {
-  var csvPath = PathUtils.normalize(file.fsName);
-  file = new File(csvPath);
-
   try {
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "Reading CSV file: " + file.fsName
+    );
+
+    var csvPath = PathUtils.normalize(file.fsName);
+    file = new File(csvPath);
+
     file.open("r");
     var content = file.read();
     file.close();
+
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.DEBUG,
+      "CSV content length: " + content.length
+    );
 
     var lines = content.split("\n");
     var csvData = [];
@@ -320,10 +468,13 @@ function readCSV(file) {
       csvData.push(columns);
     }
 
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "CSV parsing complete. Rows: " + csvData.length
+    );
     return csvData;
   } catch (error) {
-    alert("Error reading CSV file: " + error);
-    return [];
+    return ErrorUtils.handleError("CSV Reading", error);
   }
 }
 
@@ -501,113 +652,171 @@ function saveCopyAsNewFile(sourceDoc, newFileName) {
  * Main execution function
  */
 function main() {
-  var sourceDoc = app.activeDocument;
-  var frameNames = [
-    LAYOUT_CONFIG.FRAMES.LEFT,
-    LAYOUT_CONFIG.FRAMES.MIDDLE,
-    LAYOUT_CONFIG.FRAMES.RIGHT,
-  ];
+  try {
+    // Initialize error handling
+    ErrorUtils.init();
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "Script execution started"
+    );
 
-  // Get CSV data
-  var csvFile = selectCSVFile();
-  if (csvFile === null) {
-    alert("No CSV file selected. Script terminated.");
-    return;
-  }
+    var sourceDoc = app.activeDocument;
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "Source document: " + sourceDoc.name
+    );
 
-  var csvData = readCSV(csvFile);
+    var frameNames = [
+      LAYOUT_CONFIG.FRAMES.LEFT,
+      LAYOUT_CONFIG.FRAMES.MIDDLE,
+      LAYOUT_CONFIG.FRAMES.RIGHT,
+    ];
 
-  // Validate CSV data
-  var validationResult = validateCSVData(csvData);
-  if (!validationResult.isValid) {
-    alert("CSV Validation Error: " + validationResult.error);
-    return;
-  }
-
-  var processedCount = 0;
-
-  // Process entries
-  for (
-    var i = 1;
-    i < csvData.length && processedCount < LAYOUT_CONFIG.MAX_PROFILES;
-    i++
-  ) {
-    // Skip empty rows
-    if (csvData[i].length === 1 && !csvData[i][0].trim()) {
-      continue;
+    // Get CSV data
+    var csvFile = selectCSVFile();
+    if (csvFile === null) {
+      ErrorUtils.log(
+        LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+        "Script terminated - No CSV file selected"
+      );
+      return;
     }
 
-    // Create new document for first entry
-    if (processedCount === 0) {
-      var workingDoc = saveCopyAsNewFile(
-        sourceDoc,
-        processedCount + 1 + ".psd"
+    var csvData = readCSV(csvFile);
+    if (!csvData || !csvData.length) {
+      return ErrorUtils.handleError(
+        "Main Execution",
+        "Failed to read CSV data"
       );
     }
 
-    app.activeDocument = workingDoc;
+    // Validate CSV data
+    ErrorUtils.log(LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO, "Validating CSV data");
+    var validationResult = validateCSVData(csvData);
+    if (!validationResult.isValid) {
+      return ErrorUtils.handleError("CSV Validation", validationResult.error);
+    }
 
-    var entryData = {
-      name: csvData[i][0],
-      profession: csvData[i][1],
-      overdose: csvData[i][2],
-      yearOfDeath: csvData[i][3],
-      age: csvData[i][4],
-      imagePath: csvData[i][5],
-    };
+    var processedCount = 0;
 
-    var groupPrefix = LAYOUT_CONFIG.GROUP.PREFIX + (processedCount + 1);
-
-    // Place text content
-    placeContentInTextLayer(
-      entryData.name,
-      groupPrefix,
-      LAYOUT_CONFIG.LAYERS.PERSON_NAME,
-      null,
-      true
-    );
-    placeContentInTextLayer(
-      entryData.profession,
-      groupPrefix,
-      LAYOUT_CONFIG.LAYERS.OCCUPATION,
-      null,
-      true
-    );
-    placeContentInTextLayer(
-      entryData.overdose,
-      groupPrefix,
-      LAYOUT_CONFIG.LAYERS.CAUSE,
-      null,
-      true
-    );
-    placeContentInTextLayer(
-      entryData.yearOfDeath,
-      groupPrefix,
-      LAYOUT_CONFIG.LAYERS.DEATH_YEAR,
-      null,
-      false
-    );
-    placeContentInTextLayer(
-      entryData.age,
-      groupPrefix,
-      LAYOUT_CONFIG.LAYERS.AGE,
-      LAYOUT_CONFIG.GROUP.AGE_SUBGROUP,
-      false
-    );
-
-    // Process image if path provided
-    if (entryData.imagePath) {
+    // Process entries
+    for (
+      var i = 1;
+      i < csvData.length && processedCount < LAYOUT_CONFIG.MAX_PROFILES;
+      i++
+    ) {
       try {
-        processImage(entryData.imagePath, frameNames[processedCount]);
+        ErrorUtils.log(
+          LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+          "Processing entry " + i
+        );
+
+        // Skip empty rows
+        if (csvData[i].length === 1 && !csvData[i][0].trim()) {
+          ErrorUtils.log(
+            LAYOUT_CONFIG.DEBUG.LOG_LEVELS.DEBUG,
+            "Skipping empty row " + i
+          );
+          continue;
+        }
+
+        // Create new document for first entry
+        if (processedCount === 0) {
+          ErrorUtils.log(
+            LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+            "Creating new document"
+          );
+          var workingDoc = saveCopyAsNewFile(
+            sourceDoc,
+            processedCount + 1 + ".psd"
+          );
+        }
+
+        app.activeDocument = workingDoc;
+
+        var entryData = {
+          name: csvData[i][0],
+          profession: csvData[i][1],
+          overdose: csvData[i][2],
+          yearOfDeath: csvData[i][3],
+          age: csvData[i][4],
+          imagePath: csvData[i][5],
+        };
+
+        var groupPrefix = LAYOUT_CONFIG.GROUP.PREFIX + (processedCount + 1);
+
+        // Place text content
+        placeContentInTextLayer(
+          entryData.name,
+          groupPrefix,
+          LAYOUT_CONFIG.LAYERS.PERSON_NAME,
+          null,
+          true
+        );
+        placeContentInTextLayer(
+          entryData.profession,
+          groupPrefix,
+          LAYOUT_CONFIG.LAYERS.OCCUPATION,
+          null,
+          true
+        );
+        placeContentInTextLayer(
+          entryData.overdose,
+          groupPrefix,
+          LAYOUT_CONFIG.LAYERS.CAUSE,
+          null,
+          true
+        );
+        placeContentInTextLayer(
+          entryData.yearOfDeath,
+          groupPrefix,
+          LAYOUT_CONFIG.LAYERS.DEATH_YEAR,
+          null,
+          false
+        );
+        placeContentInTextLayer(
+          entryData.age,
+          groupPrefix,
+          LAYOUT_CONFIG.LAYERS.AGE,
+          LAYOUT_CONFIG.GROUP.AGE_SUBGROUP,
+          false
+        );
+
+        // Process image if path provided
+        if (entryData.imagePath) {
+          try {
+            processImage(entryData.imagePath, frameNames[processedCount]);
+          } catch (error) {
+            // Error already handled in processImage
+          }
+        }
+
+        processedCount++;
+        ErrorUtils.log(
+          LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+          "Successfully processed entry " + i
+        );
       } catch (error) {
-        // Error already handled in processImage
+        ErrorUtils.handleError(
+          "Entry Processing",
+          "Failed to process entry " + i + ": " + error.message,
+          true
+        );
+        // Continue with next entry
       }
     }
 
-    processedCount++;
+    ErrorUtils.log(
+      LAYOUT_CONFIG.DEBUG.LOG_LEVELS.INFO,
+      "Script completed. Processed " + processedCount + " entries"
+    );
+    alert("Script completed successfully!");
+  } catch (error) {
+    ErrorUtils.handleError("Main Execution", error);
+  } finally {
+    // Cleanup
+    ErrorUtils.cleanup();
   }
-
-  alert("Script completed successfully!");
 }
 
 // Execute the script with history tracking

@@ -28,7 +28,149 @@ var LAYOUT_CONFIG = {
     AGE_SUBGROUP: "age-details",
   },
   MAX_PROFILES: 3,
+  CSV: {
+    EXPECTED_COLUMNS: 6,
+    HEADERS: [
+      "Name",
+      "Profession",
+      "Overdose",
+      "Year of Death",
+      "Age",
+      "Image Path",
+    ],
+    REQUIRED_FIELDS: [0, 1, 2, 3, 4], // Indices of required fields (all except image)
+  },
 };
+
+/**
+ * Validates the structure and content of CSV data
+ * @param {Array<Array<string>>} csvData - The parsed CSV data
+ * @returns {Object} Validation result with status and error message
+ */
+function validateCSVData(csvData) {
+  if (!csvData || !csvData.length) {
+    return {
+      isValid: false,
+      error: "CSV file is empty",
+    };
+  }
+
+  // Check if we have at least one data row
+  if (csvData.length < 2) {
+    return {
+      isValid: false,
+      error: "CSV file must contain headers and at least one data row",
+    };
+  }
+
+  // Validate header row
+  var headers = csvData[0];
+  if (headers.length !== LAYOUT_CONFIG.CSV.EXPECTED_COLUMNS) {
+    return {
+      isValid: false,
+      error:
+        "CSV must have exactly " +
+        LAYOUT_CONFIG.CSV.EXPECTED_COLUMNS +
+        " columns: " +
+        LAYOUT_CONFIG.CSV.HEADERS.join(", "),
+    };
+  }
+
+  // Validate header names
+  for (var i = 0; i < LAYOUT_CONFIG.CSV.HEADERS.length; i++) {
+    if (headers[i].trim() !== LAYOUT_CONFIG.CSV.HEADERS[i]) {
+      return {
+        isValid: false,
+        error:
+          "Invalid header: Expected '" +
+          LAYOUT_CONFIG.CSV.HEADERS[i] +
+          "' but found '" +
+          headers[i].trim() +
+          "'",
+      };
+    }
+  }
+
+  // Validate data rows
+  for (var rowIndex = 1; rowIndex < csvData.length; rowIndex++) {
+    var row = csvData[rowIndex];
+
+    // Skip empty rows
+    if (row.length === 1 && !row[0].trim()) {
+      continue;
+    }
+
+    // Check column count
+    if (row.length !== LAYOUT_CONFIG.CSV.EXPECTED_COLUMNS) {
+      return {
+        isValid: false,
+        error:
+          "Row " +
+          (rowIndex + 1) +
+          " has " +
+          row.length +
+          " columns instead of " +
+          LAYOUT_CONFIG.CSV.EXPECTED_COLUMNS,
+      };
+    }
+
+    // Validate required fields
+    for (
+      var fieldIndex = 0;
+      fieldIndex < LAYOUT_CONFIG.CSV.REQUIRED_FIELDS.length;
+      fieldIndex++
+    ) {
+      var colIndex = LAYOUT_CONFIG.CSV.REQUIRED_FIELDS[fieldIndex];
+      if (!row[colIndex] || !row[colIndex].trim()) {
+        return {
+          isValid: false,
+          error:
+            "Missing required value '" +
+            LAYOUT_CONFIG.CSV.HEADERS[colIndex] +
+            "' in row " +
+            (rowIndex + 1),
+        };
+      }
+    }
+
+    // Validate numeric fields
+    if (isNaN(parseInt(row[3]))) {
+      // Year of Death
+      return {
+        isValid: false,
+        error:
+          "Invalid Year of Death in row " +
+          (rowIndex + 1) +
+          ": must be a number",
+      };
+    }
+
+    if (isNaN(parseInt(row[4]))) {
+      // Age
+      return {
+        isValid: false,
+        error: "Invalid Age in row " + (rowIndex + 1) + ": must be a number",
+      };
+    }
+
+    // Validate image path if provided
+    if (row[5] && row[5].trim()) {
+      var imageFile = new File(row[5].trim());
+      if (!imageFile.exists) {
+        return {
+          isValid: false,
+          error:
+            "Invalid image path in row " + (rowIndex + 1) + ": file not found",
+        };
+      }
+    }
+  }
+
+  return {
+    isValid: true,
+    error: null,
+  };
+}
 
 /**
  * Opens a file dialog to select a CSV file
@@ -53,6 +195,10 @@ function readCSV(file) {
 
   for (var i = 0; i < lines.length; i++) {
     var columns = lines[i].split(",");
+    // Trim whitespace from each column
+    for (var j = 0; j < columns.length; j++) {
+      columns[j] = columns[j].trim();
+    }
     csvData.push(columns);
   }
 
@@ -232,6 +378,14 @@ function main() {
   }
 
   var csvData = readCSV(csvFile);
+
+  // Validate CSV data
+  var validationResult = validateCSVData(csvData);
+  if (!validationResult.isValid) {
+    alert("CSV Validation Error: " + validationResult.error);
+    return;
+  }
+
   var processedCount = 0;
 
   // Process entries
@@ -240,6 +394,11 @@ function main() {
     i < csvData.length && processedCount < LAYOUT_CONFIG.MAX_PROFILES;
     i++
   ) {
+    // Skip empty rows
+    if (csvData[i].length === 1 && !csvData[i][0].trim()) {
+      continue;
+    }
+
     // Create new document for first entry
     if (processedCount === 0) {
       var workingDoc = saveCopyAsNewFile(

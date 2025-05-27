@@ -4,7 +4,7 @@ This script automates the process of importing and formatting images and text da
 
 ## Features
 
-- CSV file import and parsing
+- CSV file import and parsing with comprehensive validation
 - Automated image import and placement
 - Text content placement in specific layers
 - Automatic text size adjustment based on content length
@@ -15,19 +15,40 @@ This script automates the process of importing and formatting images and text da
 
 - Adobe Photoshop (Compatible with CS6 and later versions)
 - A properly formatted CSV file with the following columns:
-  1. Name
-  2. Profession
-  3. Overdose
-  4. Year of Death
-  5. Age
-  6. Image Path
+  1. Name (required)
+  2. Profession (required)
+  3. Overdose (required)
+  4. Year of Death (required, must be a number)
+  5. Age (required, must be a number)
+  6. Image Path (optional)
+
+## CSV File Requirements
+
+The script performs thorough validation of your CSV file:
+
+- Must have exactly 6 columns with the correct headers
+- Required fields cannot be empty
+- Year of Death must be a valid number
+- Age must be a valid number
+- Image paths (if provided) must point to existing files
+- Empty rows are automatically skipped
+- All fields are trimmed of extra whitespace
+
+Example CSV format:
+
+```csv
+Name,Profession,Overdose,Year of Death,Age,Image Path
+John Doe,Artist,Accidental,2020,45,C:\Images\john_doe.jpg
+Jane Smith,Musician,Unknown,2019,32,C:\Images\jane_smith.jpg
+```
 
 ## Usage
 
 1. Open your target Photoshop document
 2. Run the script in Photoshop (File > Scripts > Browse...)
 3. Select your CSV file when prompted
-4. The script will process the entries and create new documents as needed
+4. The script will validate your CSV file and show any errors
+5. If validation passes, it will process the entries and create new documents as needed
 
 ## Layer Structure Requirements
 

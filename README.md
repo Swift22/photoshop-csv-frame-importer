@@ -31,12 +31,26 @@ This script automates the process of importing and formatting images and text da
 
 ## Layer Structure Requirements
 
-Your Photoshop document should have the following layer structure:
+Your Photoshop document must have the following layer structure:
 
-- Groups named "1.", "2.", "3." (for each entry)
-- Text layers named "Name", "Profession", "Type", "Year" in each group
-- An "Age" subgroup containing an "Age" text layer
-- Frame layers named "LeftFrame", "MiddleFrame", "RightFrame"
+### Frame Layers
+
+- `profile-frame-left` - Left frame for image placement
+- `profile-frame-center` - Center frame for image placement
+- `profile-frame-right` - Right frame for image placement
+
+### Group Structure
+
+For each profile (1-3), create a group with the following naming pattern:
+
+- Main group name: `profile-1`, `profile-2`, `profile-3`
+  - Text layers within each group:
+    - `profile-name` - Person's name
+    - `profile-occupation` - Person's profession
+    - `profile-cause` - Cause information
+    - `profile-year` - Year information
+  - Subgroup named `age-details`:
+    - Text layer `profile-age` - Age information
 
 ## Error Handling
 
@@ -54,6 +68,16 @@ This is a JSX script that uses Adobe ExtendScript. To develop or modify this scr
 - Visual Studio Code with ExtendScript Debugger extension
 - Adobe ExtendScript Toolkit CC
 - Any text editor with JavaScript syntax highlighting
+
+## Configuration
+
+The script uses a configuration object (`LAYOUT_CONFIG`) that defines:
+
+- Text settings (maximum width, initial font size)
+- Frame names
+- Layer names
+- Group naming conventions
+- Maximum number of profiles
 
 ## License
 

@@ -4,10 +4,31 @@
  * Compatible with Adobe Photoshop CS6 and later versions.
  */
 
-// Constants for configuration
-var MAX_TEXT_WIDTH = 620; // Maximum width for text layers in pixels
-var INITIAL_FONT_SIZE = 45; // Starting font size for text scaling
-var MAX_ENTRIES = 3; // Maximum number of entries to process
+// System Constants
+var LAYOUT_CONFIG = {
+  TEXT: {
+    MAX_WIDTH: 620, // Maximum width for text layers in pixels
+    INITIAL_SIZE: 45, // Starting font size for text scaling
+    MIN_SIZE: 1, // Minimum allowed font size
+  },
+  FRAMES: {
+    LEFT: "profile-frame-left",
+    MIDDLE: "profile-frame-center",
+    RIGHT: "profile-frame-right",
+  },
+  LAYERS: {
+    PERSON_NAME: "profile-name",
+    OCCUPATION: "profile-occupation",
+    CAUSE: "profile-cause",
+    DEATH_YEAR: "profile-year",
+    AGE: "profile-age",
+  },
+  GROUP: {
+    PREFIX: "profile-", // Will be followed by number (e.g., "profile-1")
+    AGE_SUBGROUP: "age-details",
+  },
+  MAX_PROFILES: 3,
+};
 
 /**
  * Opens a file dialog to select a CSV file
@@ -152,8 +173,11 @@ function placeContentInTextLayer(
             return bounds[2] - bounds[0];
           }
 
-          textItem.size = INITIAL_FONT_SIZE;
-          while (getTextWidth() > MAX_TEXT_WIDTH && textItem.size > 1) {
+          textItem.size = LAYOUT_CONFIG.TEXT.INITIAL_SIZE;
+          while (
+            getTextWidth() > LAYOUT_CONFIG.TEXT.MAX_WIDTH &&
+            textItem.size > LAYOUT_CONFIG.TEXT.MIN_SIZE
+          ) {
             textItem.size -= 0.5;
           }
 
@@ -194,7 +218,11 @@ function saveCopyAsNewFile(sourceDoc, newFileName) {
  */
 function main() {
   var sourceDoc = app.activeDocument;
-  var frameNames = ["LeftFrame", "MiddleFrame", "RightFrame"];
+  var frameNames = [
+    LAYOUT_CONFIG.FRAMES.LEFT,
+    LAYOUT_CONFIG.FRAMES.MIDDLE,
+    LAYOUT_CONFIG.FRAMES.RIGHT,
+  ];
 
   // Get CSV data
   var csvFile = selectCSVFile();
@@ -207,7 +235,11 @@ function main() {
   var processedCount = 0;
 
   // Process entries
-  for (var i = 1; i < csvData.length && processedCount < MAX_ENTRIES; i++) {
+  for (
+    var i = 1;
+    i < csvData.length && processedCount < LAYOUT_CONFIG.MAX_PROFILES;
+    i++
+  ) {
     // Create new document for first entry
     if (processedCount === 0) {
       var workingDoc = saveCopyAsNewFile(
@@ -227,32 +259,44 @@ function main() {
       imagePath: csvData[i][5],
     };
 
-    var groupPrefix = processedCount + 1 + ".";
+    var groupPrefix = LAYOUT_CONFIG.GROUP.PREFIX + (processedCount + 1);
 
     // Place text content
-    placeContentInTextLayer(entryData.name, groupPrefix, "Name", null, true);
+    placeContentInTextLayer(
+      entryData.name,
+      groupPrefix,
+      LAYOUT_CONFIG.LAYERS.PERSON_NAME,
+      null,
+      true
+    );
     placeContentInTextLayer(
       entryData.profession,
       groupPrefix,
-      "Profession",
+      LAYOUT_CONFIG.LAYERS.OCCUPATION,
       null,
       true
     );
     placeContentInTextLayer(
       entryData.overdose,
       groupPrefix,
-      "Type",
+      LAYOUT_CONFIG.LAYERS.CAUSE,
       null,
       true
     );
     placeContentInTextLayer(
       entryData.yearOfDeath,
       groupPrefix,
-      "Year",
+      LAYOUT_CONFIG.LAYERS.DEATH_YEAR,
       null,
       false
     );
-    placeContentInTextLayer(entryData.age, groupPrefix, "Age", "Age", false);
+    placeContentInTextLayer(
+      entryData.age,
+      groupPrefix,
+      LAYOUT_CONFIG.LAYERS.AGE,
+      LAYOUT_CONFIG.GROUP.AGE_SUBGROUP,
+      false
+    );
 
     // Process image if path provided
     if (entryData.imagePath) {

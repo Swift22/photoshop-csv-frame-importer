@@ -40,6 +40,110 @@ var LAYOUT_CONFIG = {
     ],
     REQUIRED_FIELDS: [0, 1, 2, 3, 4], // Indices of required fields (all except image)
   },
+  PATHS: {
+    ALLOWED_IMAGE_EXTENSIONS: ["jpg", "jpeg", "png", "tif", "tiff", "psd"],
+    MAX_PATH_LENGTH: 255,
+  },
+};
+
+/**
+ * Utilities for handling file paths
+ */
+var PathUtils = {
+  /**
+   * Normalizes file path separators for current OS
+   * @param {string} path - File path to normalize
+   * @returns {string} Normalized path
+   */
+  normalize: function (path) {
+    if (!path) return "";
+    // Convert all slashes to system-specific separator
+    return path.replace(/[\\/]+/g, Folder.fs === "Windows" ? "\\" : "/").trim();
+  },
+
+  /**
+   * Resolves a relative path against the CSV file location
+   * @param {string} basePath - Base directory path (CSV file location)
+   * @param {string} relativePath - Relative path to resolve
+   * @returns {string} Resolved absolute path
+   */
+  resolveRelativePath: function (basePath, relativePath) {
+    if (!relativePath) return "";
+
+    // If already absolute, return normalized
+    if (this.isAbsolutePath(relativePath)) {
+      return this.normalize(relativePath);
+    }
+
+    // Get CSV directory as base
+    var baseDir = Folder(basePath).parent;
+    var resolved =
+      baseDir + Folder.fs === "Windows"
+        ? "\\"
+        : "/" + this.normalize(relativePath);
+    return resolved;
+  },
+
+  /**
+   * Checks if path is absolute
+   * @param {string} path - Path to check
+   * @returns {boolean} True if absolute path
+   */
+  isAbsolutePath: function (path) {
+    if (!path) return false;
+    if (Folder.fs === "Windows") {
+      return /^[A-Za-z]:\\/.test(path) || /^\\\\/.test(path);
+    }
+    return path.charAt(0) === "/";
+  },
+
+  /**
+   * Validates a file path
+   * @param {string} path - Path to validate
+   * @param {Array<string>} [allowedExtensions] - List of allowed file extensions
+   * @returns {Object} Validation result with status and error message
+   */
+  validatePath: function (path, allowedExtensions) {
+    var result = {
+      isValid: false,
+      error: null,
+    };
+
+    if (!path) {
+      result.error = "Empty file path";
+      return result;
+    }
+
+    // Check path length
+    if (path.length > LAYOUT_CONFIG.PATHS.MAX_PATH_LENGTH) {
+      result.error =
+        "File path exceeds maximum length of " +
+        LAYOUT_CONFIG.PATHS.MAX_PATH_LENGTH +
+        " characters";
+      return result;
+    }
+
+    // Check for invalid characters
+    var invalidChars =
+      Folder.fs === "Windows" ? /[<>:"|?*\x00-\x1F]/g : /[\x00\/]/g;
+    if (invalidChars.test(path)) {
+      result.error = "File path contains invalid characters";
+      return result;
+    }
+
+    // Check extension if provided
+    if (allowedExtensions && allowedExtensions.length > 0) {
+      var ext = path.split(".").pop().toLowerCase();
+      if (allowedExtensions.indexOf(ext) === -1) {
+        result.error =
+          "Invalid file extension. Allowed: " + allowedExtensions.join(", ");
+        return result;
+      }
+    }
+
+    result.isValid = true;
+    return result;
+  },
 };
 
 /**
@@ -177,7 +281,17 @@ function validateCSVData(csvData) {
  * @returns {File} Selected CSV file or null if cancelled
  */
 function selectCSVFile() {
-  return File.openDialog("Select a CSV file", "*.csv");
+  var csvFile = File.openDialog("Select a CSV file", "*.csv");
+  if (csvFile === null) return null;
+
+  // Validate path
+  var validation = PathUtils.validatePath(csvFile.fsName, ["csv"]);
+  if (!validation.isValid) {
+    alert("Invalid CSV file path: " + validation.error);
+    return null;
+  }
+
+  return csvFile;
 }
 
 /**
@@ -186,23 +300,31 @@ function selectCSVFile() {
  * @returns {Array<Array<string>>} Parsed CSV data as 2D array
  */
 function readCSV(file) {
-  file.open("r");
-  var content = file.read();
-  file.close();
+  var csvPath = PathUtils.normalize(file.fsName);
+  file = new File(csvPath);
 
-  var lines = content.split("\n");
-  var csvData = [];
+  try {
+    file.open("r");
+    var content = file.read();
+    file.close();
 
-  for (var i = 0; i < lines.length; i++) {
-    var columns = lines[i].split(",");
-    // Trim whitespace from each column
-    for (var j = 0; j < columns.length; j++) {
-      columns[j] = columns[j].trim();
+    var lines = content.split("\n");
+    var csvData = [];
+
+    for (var i = 0; i < lines.length; i++) {
+      var columns = lines[i].split(",");
+      // Trim whitespace from each column
+      for (var j = 0; j < columns.length; j++) {
+        columns[j] = columns[j].trim();
+      }
+      csvData.push(columns);
     }
-    csvData.push(columns);
-  }
 
-  return csvData;
+    return csvData;
+  } catch (error) {
+    alert("Error reading CSV file: " + error);
+    return [];
+  }
 }
 
 /**
@@ -214,9 +336,25 @@ function processImage(imagePath, frameName) {
   var originalDoc = app.activeDocument;
   var targetFrame = originalDoc.layers.getByName(frameName);
 
-  var imageFile = new File(imagePath);
+  // Validate and normalize image path
+  var validation = PathUtils.validatePath(
+    imagePath,
+    LAYOUT_CONFIG.PATHS.ALLOWED_IMAGE_EXTENSIONS
+  );
+  if (!validation.isValid) {
+    alert("Invalid image path: " + validation.error);
+    return;
+  }
+
+  // Resolve relative paths against CSV location
+  var resolvedPath = PathUtils.resolveRelativePath(
+    app.activeDocument.path,
+    imagePath
+  );
+  var imageFile = new File(resolvedPath);
+
   if (!imageFile.exists) {
-    alert("Image file not found: " + imagePath);
+    alert("Image file not found: " + resolvedPath);
     return;
   }
 
@@ -263,7 +401,7 @@ function processImage(imagePath, frameName) {
       frameCenterY - imageCenterY
     );
   } catch (error) {
-    alert("Error processing image: " + imagePath + "\nError: " + error);
+    alert("Error processing image: " + resolvedPath + "\nError: " + error);
   }
 }
 
